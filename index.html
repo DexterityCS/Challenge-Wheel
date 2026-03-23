@@ -334,9 +334,7 @@ html, body {
      ============================================================ -->
 
 <div id="scene">
-  <div id="status-bar">
-    <div class="s-dot" id="s-dot"></div>
-    <span id="s-text">Not connected</span>
+
   </div>
 
   <div id="result-overlay">
@@ -935,9 +933,8 @@ async function subscribeEventSub() {
 }
 
 function setStatus(state, text) {
-  const dot = document.getElementById('s-dot');
-  dot.className = 's-dot' + (state === 'live' ? ' live' : state === 'err' ? ' err' : '');
-  document.getElementById('s-text').textContent = text;
+  // status display removed — connection state is internal only
+  console.log('[Wheel] Status:', state, text);
 }
 
 // ---- Config panel ----
