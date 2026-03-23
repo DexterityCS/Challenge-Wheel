@@ -61,7 +61,13 @@ html, body {
   width: var(--wheel-size);
   height: var(--wheel-size);
   flex-shrink: 0;
-  transition: opacity 0.6s ease, max-height 0.6s ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+#wheel-container.visible {
+  opacity: 1;
+  pointer-events: all;
 }
 #wheel-container.hidden {
   opacity: 0;
@@ -539,6 +545,9 @@ function doSpin(redeemer) {
   const hub = document.getElementById('spin-hub');
   hub.classList.add('disabled');
   document.getElementById('wheel-canvas').classList.add('spinning');
+  const wc = document.getElementById('wheel-container');
+  wc.classList.remove('hidden');
+  wc.classList.add('visible');
   // Pick winner upfront so we can aim the wheel exactly at its slice
   const items = cfg.items;
   const tw = totalWeight();
@@ -703,7 +712,9 @@ function closeResult() {
   document.getElementById('conf-container').innerHTML = '';
   document.getElementById('res-close').textContent = 'Confirm [ESC]';
   document.getElementById('spin-hub').style.display = '';
-  document.getElementById('wheel-container').classList.remove('hidden');
+  const wc = document.getElementById('wheel-container');
+  wc.classList.remove('visible');
+  wc.classList.add('hidden');
 }
 
 function spawnConfetti(baseColor) {
