@@ -833,76 +833,96 @@ function startTwitchAuth() {
 }
 
 // ---- Twitch EventSub WebSocket ----
-let intentionalClose = false;
-
 function connectTwitch() {
   if (!cfg.oauthToken || !cfg.clientId) {
-    setStatus('off', 'Set Client ID and connect Twitch');
+    console.log('[Wheel] Missing token or clientId');
     return;
   }
-  if (ws) { intentionalClose = true; ws.close(); ws = null; }
-  intentionalClose = false;
-  setStatus('off', 'Connecting...');
-  ws = new WebSocket('wss://eventsub.wss.twitch.tv/ws');
+  if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); ws = null; }
+  console.log('[Wheel] Connecting to EventSub...');
+  openEventSubSocket();
+}
 
-  ws.onopen = () => {};
+function openEventSubSocket(url) {
+  ws = new WebSocket(url || 'wss://eventsub.wss.twitch.tv/ws');
 
   ws.onmessage = async e => {
     try {
       const msg = JSON.parse(e.data);
       const type = msg.metadata?.message_type;
+      console.log('[Wheel] WS message type:', type);
+      window._debug('WS msg: ' + type);
 
       if (type === 'session_welcome') {
         eventsubSessionId = msg.payload.session.id;
+        console.log('[Wheel] Session ID:', eventsubSessionId);
+        window._debug('Session: ' + eventsubSessionId);
         await resolveUserId();
       }
 
       if (type === 'session_reconnect') {
+        console.log('[Wheel] Reconnecting...');
         const newUrl = msg.payload.session.reconnect_url;
-        intentionalClose = true;
+        ws.onclose = null;
         ws.close();
-        ws = new WebSocket(newUrl);
-        intentionalClose = false;
-        attachWsHandlers();
-        return;
+        openEventSubSocket(newUrl);
       }
 
       if (type === 'notification') {
         const evt = msg.payload.event;
-        console.log('[Wheel] EventSub notification:', JSON.stringify(evt));
-        if (evt) {
-          // Twitch EventSub redemption payload: evt.reward.title
-          const rewardTitle = (evt.reward?.title || evt.reward_title || '').toLowerCase().trim();
-          const filter = (cfg.rewardFilter || '').toLowerCase().trim();
-          console.log('[Wheel] Reward title:', rewardTitle, '| Filter:', filter);
-          if (!filter || rewardTitle.includes(filter) || filter.includes(rewardTitle)) {
-            const user = evt.user_name || evt.user_display_name || evt.user_login || 'viewer';
-            console.log('[Wheel] Spinning for:', user);
-            enqueue(user);
-          } else {
-            console.log('[Wheel] Reward did not match filter, skipping.');
-          }
+        console.log('[Wheel] Notification event:', JSON.stringify(evt));
+        window._debug('Event: ' + JSON.stringify(evt).slice(0, 120));
+        if (!evt) return;
+        const rewardTitle = (evt.reward?.title || '').toLowerCase().trim();
+        const filter = (cfg.rewardFilter || '').toLowerCase().trim();
+        console.log('[Wheel] rewardTitle:', rewardTitle, 'filter:', filter);
+        window._debug('reward:"' + rewardTitle + '" filter:"' + filter + '"');
+        if (!filter || rewardTitle.includes(filter) || filter.includes(rewardTitle)) {
+          const user = evt.user_name || evt.user_login || 'viewer';
+          console.log('[Wheel] Enqueuing spin for:', user);
+          window._debug('SPIN: ' + user);
+          enqueue(user);
+        } else {
+          console.log('[Wheel] No match, skipping');
+          window._debug('NO MATCH');
         }
       }
-    } catch(ex) { console.error('[Wheel] Error handling message:', ex); }
+    } catch(ex) {
+      console.error('[Wheel] Message error:', ex);
+      window._debug('ERROR: ' + ex.message);
+    }
   };
 
-  ws.onerror = () => { if (!intentionalClose) setStatus('err', 'Connection error'); };
-  ws.onclose = () => { if (!intentionalClose && ws) setStatus('err', 'Disconnected — reload to retry'); };
+  ws.onerror = e => console.error('[Wheel] WS error:', e);
+  ws.onclose = e => {
+    console.log('[Wheel] WS closed, code:', e.code, 'clean:', e.wasClean);
+    window._debug('WS closed code:' + e.code);
+    // Auto-reconnect after 5s on unexpected close
+    if (e.code !== 1000) setTimeout(() => openEventSubSocket(), 5000);
+  };
 }
 
 async function resolveUserId() {
   try {
     const channelName = cfg.channel.trim().toLowerCase();
-    if (!channelName) { setStatus('err', 'Set channel name in config'); return; }
+    if (!channelName) { console.log('[Wheel] No channel set'); return; }
+    console.log('[Wheel] Resolving user ID for:', channelName);
+    window._debug('Resolving: ' + channelName);
     const res = await fetch(`https://api.twitch.tv/helix/users?login=${channelName}`, {
       headers: { 'Client-Id': cfg.clientId, 'Authorization': `Bearer ${cfg.oauthToken}` }
     });
     const data = await res.json();
-    if (!data.data?.length) { setStatus('err', `Channel "${channelName}" not found`); return; }
+    console.log('[Wheel] Users response:', JSON.stringify(data));
+    window._debug('Users API: ' + JSON.stringify(data).slice(0,80));
+    if (!data.data?.length) { console.log('[Wheel] Channel not found'); return; }
     twitchUserId = data.data[0].id;
+    console.log('[Wheel] User ID:', twitchUserId);
+    window._debug('UserID: ' + twitchUserId);
     await subscribeEventSub();
-  } catch(e) { setStatus('err', 'Failed to resolve channel'); }
+  } catch(e) {
+    console.error('[Wheel] resolveUserId error:', e);
+    window._debug('resolveUserId ERROR: ' + e.message);
+  }
 }
 
 async function subscribeEventSub() {
@@ -913,6 +933,8 @@ async function subscribeEventSub() {
       condition: { broadcaster_user_id: twitchUserId },
       transport: { method: 'websocket', session_id: eventsubSessionId }
     };
+    console.log('[Wheel] Subscribing EventSub:', JSON.stringify(body));
+    window._debug('Subscribing EventSub...');
     const res = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
       method: 'POST',
       headers: {
@@ -923,17 +945,15 @@ async function subscribeEventSub() {
       body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (res.ok) {
-      setStatus('live', 'Connected · #' + cfg.channel);
-    } else {
-      const err = data.message || res.status;
-      setStatus('err', 'EventSub error: ' + err);
-    }
-  } catch(e) { setStatus('err', 'Subscription failed'); }
+    console.log('[Wheel] Subscribe response', res.status, JSON.stringify(data));
+    window._debug('Subscribe ' + res.status + ': ' + JSON.stringify(data).slice(0,80));
+  } catch(e) {
+    console.error('[Wheel] subscribeEventSub error:', e);
+    window._debug('Subscribe ERROR: ' + e.message);
+  }
 }
 
 function setStatus(state, text) {
-  // status display removed — connection state is internal only
   console.log('[Wheel] Status:', state, text);
 }
 
@@ -1025,6 +1045,24 @@ function cfgReset() {
 function esc(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ---- Init ----
+// Debug overlay — only shown with ?debug=1 in URL
+if (new URLSearchParams(window.location.search).get('debug') === '1') {
+  const dbg = document.createElement('div');
+  dbg.id = 'debug-overlay';
+  dbg.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#e8b84b;font-family:monospace;font-size:11px;padding:8px;z-index:9999;max-height:200px;overflow-y:auto;white-space:pre-wrap;';
+  dbg.textContent = 'Debug mode on. Waiting for events...';
+  document.body.appendChild(dbg);
+  window._debug = (msg) => {
+    dbg.textContent = new Date().toLocaleTimeString() + ' ' + msg + '\n' + dbg.textContent;
+  };
+  window._debug('Token: ' + (cfg.oauthToken ? 'SET' : 'NOT SET'));
+  window._debug('ClientID: ' + (cfg.clientId ? cfg.clientId.slice(0,8)+'...' : 'NOT SET'));
+  window._debug('Channel: ' + (cfg.channel || 'NOT SET'));
+  window._debug('Reward filter: ' + (cfg.rewardFilter || '(any)'));
+} else {
+  window._debug = () => {};
+}
+
 // Handle OAuth redirect — if we landed here with a token in the hash, save it and close
 (function handleOAuthRedirect() {
   const hash = window.location.hash;
