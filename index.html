@@ -797,7 +797,7 @@ function startTwitchAuth() {
   saveCfg();
   const scopes = 'channel:read:redemptions channel:manage:redemptions user:read:email';
   // Use this page itself as the redirect — it will detect the token on load and close
-  const redirectUri = window.location.href.split('?')[0].split('#')[0];
+  const redirectUri = window.location.href.split('?')[0].split('#')[0].replace(/\/?$/, '/');
   const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}&force_verify=true`;
   const popup = window.open(url, 'twitch-auth', 'width=500,height=750,left=200,top=100');
   document.getElementById('cfg-auth-status').textContent = 'Waiting for Twitch login...';
@@ -806,14 +806,20 @@ function startTwitchAuth() {
     try {
       if (!popup || popup.closed) {
         clearInterval(poll);
-        // Check if token was saved (popup may have closed itself after success)
-        if (cfg.oauthToken) {
-          document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-          document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-          document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-        } else {
-          document.getElementById('cfg-auth-status').textContent = 'Cancelled.';
-        }
+        // Re-read localStorage in case the popup saved the token there
+        try {
+          const saved = JSON.parse(localStorage.getItem('wheelCfg') || '{}');
+          if (saved.oauthToken) {
+            cfg.oauthToken = saved.oauthToken;
+            document.getElementById('cfg-auth-status').textContent = 'Authorised!';
+            document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+            document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+            document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+            connectTwitch();
+          } else {
+            document.getElementById('cfg-auth-status').textContent = 'Cancelled.';
+          }
+        } catch(e) {}
         return;
       }
       const hash = popup.location.hash;
