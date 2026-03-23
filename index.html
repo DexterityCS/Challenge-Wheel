@@ -375,6 +375,7 @@ html, body {
     <div class="cfg-row" style="gap:10px;">
       <label>Twitch auth</label>
       <button id="cfg-auth-btn" onclick="startTwitchAuth()" style="padding:7px 16px;font-size:12px;font-family:'Share Tech Mono',monospace;background:#9146ff;color:#fff;border:none;border-radius:2px;cursor:pointer;letter-spacing:0.05em;">Connect with Twitch</button>
+      <button id="cfg-disconnect-btn" onclick="disconnectTwitch()" style="padding:7px 16px;font-size:12px;font-family:'Share Tech Mono',monospace;background:transparent;color:#e88888;border:1px solid rgba(232,75,75,0.4);border-radius:2px;cursor:pointer;letter-spacing:0.05em;display:none;">Disconnect</button>
       <span id="cfg-auth-status" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);"></span>
     </div>
   </div>
@@ -825,6 +826,7 @@ function startTwitchAuth() {
         document.getElementById('cfg-auth-status').textContent = 'Authorised!';
         document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
         document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+        document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
         connectTwitch();
       }
     } catch(e) {
@@ -952,6 +954,17 @@ async function subscribeEventSub() {
     console.error('[Wheel] subscribeEventSub error:', e);
     window._debug('Subscribe ERROR: ' + e.message);
   }
+}
+
+function disconnectTwitch() {
+  if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); ws = null; }
+  cfg.oauthToken = '';
+  saveCfg();
+  document.getElementById('cfg-auth-btn').textContent = 'Connect with Twitch';
+  document.getElementById('cfg-auth-btn').style.background = '#9146ff';
+  document.getElementById('cfg-auth-status').textContent = 'Disconnected.';
+  document.getElementById('cfg-disconnect-btn').style.display = 'none';
+  console.log('[Wheel] Disconnected and token cleared');
 }
 
 function setStatus(state, text) {
