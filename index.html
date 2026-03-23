@@ -913,6 +913,14 @@ function openEventSubSocket(url) {
 
 async function resolveUserId() {
   try {
+    // First validate token and log scopes
+    const valRes = await fetch('https://id.twitch.tv/oauth2/validate', {
+      headers: { 'Authorization': 'OAuth ' + cfg.oauthToken }
+    });
+    const valData = await valRes.json();
+    console.log('[Wheel] Token validation:', JSON.stringify(valData));
+    window._debug('Scopes: ' + (valData.scopes||[]).join(', '));
+
     const channelName = cfg.channel.trim().toLowerCase();
     if (!channelName) { console.log('[Wheel] No channel set'); return; }
     console.log('[Wheel] Resolving user ID for:', channelName);
