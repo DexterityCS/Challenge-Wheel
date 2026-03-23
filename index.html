@@ -31,6 +31,7 @@ html, body {
 }
 
 #scene {
+  width: 100vw; height: 100vh;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px;
   position: relative;
@@ -45,18 +46,18 @@ html, body {
   width: var(--wheel-size);
   height: var(--wheel-size);
   flex-shrink: 0;
-  display: none;
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.6s ease;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
 }
 #wheel-container.visible {
-  display: block;
+  visibility: visible;
   opacity: 1;
   pointer-events: all;
 }
 #wheel-container.hidden {
-  display: none;
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
 }
@@ -170,15 +171,16 @@ html, body {
 
 /* ---- Result overlay — bomb detonation card ---- */
 #result-overlay {
-  display: none;
+  display: flex;
   align-items: center; justify-content: center;
   pointer-events: none;
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.3s, visibility 0.3s;
   width: 100%;
 }
 #result-overlay.show {
-  display: flex;
+  visibility: visible;
   opacity: 1;
   pointer-events: all;
 }
@@ -801,83 +803,70 @@ function playWin() {
 function startTwitchAuth() {
   const clientId = document.getElementById('cfg-clientid').value.trim() || cfg.clientId;
   if (!clientId) { alert('Enter your Client ID first.'); return; }
-  // Save clientId now so the redirect page can read it
   cfg.clientId = clientId;
   cfg.oauthToken = '';
   saveCfg();
   const scopes = 'channel:read:redemptions channel:manage:redemptions user:read:email';
-  // Use this page itself as the redirect — it will detect the token on load and close
   const redirectUri = window.location.origin + window.location.pathname.replace(/\/?$/, '/');
   const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}&force_verify=true`;
   const popup = window.open(url, 'twitch-auth', 'width=500,height=750,left=200,top=100');
   document.getElementById('cfg-auth-status').textContent = 'Waiting for Twitch login...';
-  // Poll for the popup to come back to our page with the token in the hash
+  let handled = false;
   const poll = setInterval(() => {
+    if (handled) return;
+    try {
+      const hash = popup.location.hash;
+      if (hash && hash.includes('access_token')) {
+        handled = true;
+        clearInterval(poll);
+        const token = new URLSearchParams(hash.replace('#', '?')).get('access_token');
+        popup.close();
+        onTokenReceived(token);
+      }
+    } catch(e) {}
     try {
       if (!popup || popup.closed) {
         clearInterval(poll);
-        // Re-read localStorage in case the popup saved the token there
-        try {
+        if (!handled) {
+          // Popup closed without us catching the hash — check localStorage
           const saved = JSON.parse(localStorage.getItem('wheelCfg') || '{}');
-          if (saved.oauthToken) {
-            cfg.oauthToken = saved.oauthToken;
-            fetch('https://id.twitch.tv/oauth2/validate', {
-              headers: { 'Authorization': 'OAuth ' + saved.oauthToken }
-            }).then(r => r.json()).then(data => {
-              if (data.login) {
-                cfg.channel = data.login;
-                saveCfg();
-                document.getElementById('cfg-channel').value = data.login;
-                document.getElementById('cfg-auth-status').textContent = 'Connected as ' + data.login;
-              } else {
-                document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-              }
-              document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-              document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-              document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
-              connectTwitch();
-            }).catch(() => connectTwitch());
+          if (saved.oauthToken && saved.oauthToken !== cfg.oauthToken) {
+            handled = true;
+            onTokenReceived(saved.oauthToken);
           } else {
             document.getElementById('cfg-auth-status').textContent = 'Cancelled.';
           }
-        } catch(e) {}
-        return;
+        }
       }
-      const hash = popup.location.hash;
-      if (hash && hash.includes('access_token')) {
-        clearInterval(poll);
-        const token = new URLSearchParams(hash.replace('#', '?')).get('access_token');
-        cfg.oauthToken = token;
-        saveCfg();
-        popup.close();
-        // Auto-fill channel name from token
-        fetch('https://id.twitch.tv/oauth2/validate', {
-          headers: { 'Authorization': 'OAuth ' + token }
-        }).then(r => r.json()).then(data => {
-          if (data.login) {
-            cfg.channel = data.login;
-            saveCfg();
-            document.getElementById('cfg-channel').value = data.login;
-            document.getElementById('cfg-auth-status').textContent = 'Connected as ' + data.login;
-          } else {
-            document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-          }
-          document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-          document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-          document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
-          connectTwitch();
-        }).catch(() => {
-          document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-          document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-          document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-          document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
-          connectTwitch();
-        });
-      }
-    } catch(e) {
-      // Cross-origin error while Twitch is loading — normal, keep polling
+    } catch(e) {}
+  }, 300);
+}
+
+function onTokenReceived(token) {
+  cfg.oauthToken = token;
+  saveCfg();
+  fetch('https://id.twitch.tv/oauth2/validate', {
+    headers: { 'Authorization': 'OAuth ' + token }
+  }).then(r => r.json()).then(data => {
+    if (data.login) {
+      cfg.channel = data.login;
+      saveCfg();
+      document.getElementById('cfg-channel').value = data.login;
+      document.getElementById('cfg-auth-status').textContent = 'Connected as ' + data.login;
+    } else {
+      document.getElementById('cfg-auth-status').textContent = 'Authorised!';
     }
-  }, 400);
+    document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+    document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+    document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+    connectTwitch();
+  }).catch(() => {
+    document.getElementById('cfg-auth-status').textContent = 'Authorised!';
+    document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+    document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+    document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+    connectTwitch();
+  });
 }
 
 // ---- Twitch EventSub WebSocket ----
@@ -945,8 +934,8 @@ function openEventSubSocket(url) {
   ws.onclose = e => {
     console.log('[Wheel] WS closed, code:', e.code, 'clean:', e.wasClean);
     window._debug('WS closed code:' + e.code);
-    // Auto-reconnect after 5s on unexpected close
-    if (e.code !== 1000) setTimeout(() => openEventSubSocket(), 5000);
+    // Auto-reconnect after 10s on unexpected close (not code 4003 which means auth failed)
+    if (e.code !== 1000 && e.code !== 4003) setTimeout(() => openEventSubSocket(), 10000);
   };
 }
 
