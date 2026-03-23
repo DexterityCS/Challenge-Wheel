@@ -855,12 +855,15 @@ function startTwitchAuth() {
 }
 
 // ---- Twitch EventSub WebSocket ----
+let intentionalClose = false;
+
 function connectTwitch() {
   if (!cfg.oauthToken || !cfg.clientId) {
     setStatus('off', 'Set Client ID and connect Twitch');
     return;
   }
-  if (ws) { ws.close(); ws = null; }
+  if (ws) { intentionalClose = true; ws.close(); ws = null; }
+  intentionalClose = false;
   setStatus('off', 'Connecting...');
   ws = new WebSocket('wss://eventsub.wss.twitch.tv/ws');
 
@@ -878,28 +881,36 @@ function connectTwitch() {
 
       if (type === 'session_reconnect') {
         const newUrl = msg.payload.session.reconnect_url;
+        intentionalClose = true;
         ws.close();
         ws = new WebSocket(newUrl);
+        intentionalClose = false;
         attachWsHandlers();
         return;
       }
 
       if (type === 'notification') {
         const evt = msg.payload.event;
+        console.log('[Wheel] EventSub notification:', JSON.stringify(evt));
         if (evt) {
-          const title = (evt.reward?.title || '').toLowerCase();
+          // Twitch EventSub redemption payload: evt.reward.title
+          const rewardTitle = (evt.reward?.title || evt.reward_title || '').toLowerCase().trim();
           const filter = (cfg.rewardFilter || '').toLowerCase().trim();
-          if (!filter || title.includes(filter)) {
-            const user = evt.user_name || evt.user_login || 'viewer';
+          console.log('[Wheel] Reward title:', rewardTitle, '| Filter:', filter);
+          if (!filter || rewardTitle.includes(filter) || filter.includes(rewardTitle)) {
+            const user = evt.user_name || evt.user_display_name || evt.user_login || 'viewer';
+            console.log('[Wheel] Spinning for:', user);
             enqueue(user);
+          } else {
+            console.log('[Wheel] Reward did not match filter, skipping.');
           }
         }
       }
-    } catch(ex) { console.error(ex); }
+    } catch(ex) { console.error('[Wheel] Error handling message:', ex); }
   };
 
-  ws.onerror = () => setStatus('err', 'Connection error');
-  ws.onclose = () => { if (ws) setStatus('err', 'Disconnected — reload to retry'); };
+  ws.onerror = () => { if (!intentionalClose) setStatus('err', 'Connection error'); };
+  ws.onclose = () => { if (!intentionalClose && ws) setStatus('err', 'Disconnected — reload to retry'); };
 }
 
 async function resolveUserId() {
