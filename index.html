@@ -534,6 +534,8 @@ function doSpin(redeemer) {
   const wc = document.getElementById('wheel-container');
   wc.classList.remove('hidden');
   wc.classList.add('visible');
+  // Force redraw now that container is visible and has dimensions
+  requestAnimationFrame(() => drawWheel());
   // Pick winner upfront so we can aim the wheel exactly at its slice
   const items = cfg.items;
   const tw = totalWeight();
@@ -633,7 +635,15 @@ function manualSpin() {
 }
 
 // ---- Queue ----
+let lastRedemptionTime = 0;
 function enqueue(user) {
+  // Debounce — ignore duplicate events within 3 seconds
+  const now = Date.now();
+  if (now - lastRedemptionTime < 3000) {
+    console.log('[Wheel] Debounced duplicate redemption from', user);
+    return;
+  }
+  lastRedemptionTime = now;
   if (!spinning) {
     doSpin(user);
   } else {
@@ -797,7 +807,7 @@ function startTwitchAuth() {
   saveCfg();
   const scopes = 'channel:read:redemptions channel:manage:redemptions user:read:email';
   // Use this page itself as the redirect — it will detect the token on load and close
-  const redirectUri = 'https://dexteritycs.github.io/Challenge-Wheel/';
+  const redirectUri = window.location.origin + window.location.pathname.replace(/\/?$/, '/');
   const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}&force_verify=true`;
   const popup = window.open(url, 'twitch-auth', 'width=500,height=750,left=200,top=100');
   document.getElementById('cfg-auth-status').textContent = 'Waiting for Twitch login...';
@@ -811,11 +821,22 @@ function startTwitchAuth() {
           const saved = JSON.parse(localStorage.getItem('wheelCfg') || '{}');
           if (saved.oauthToken) {
             cfg.oauthToken = saved.oauthToken;
-            document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-            document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-            document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-            document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
-            connectTwitch();
+            fetch('https://id.twitch.tv/oauth2/validate', {
+              headers: { 'Authorization': 'OAuth ' + saved.oauthToken }
+            }).then(r => r.json()).then(data => {
+              if (data.login) {
+                cfg.channel = data.login;
+                saveCfg();
+                document.getElementById('cfg-channel').value = data.login;
+                document.getElementById('cfg-auth-status').textContent = 'Connected as ' + data.login;
+              } else {
+                document.getElementById('cfg-auth-status').textContent = 'Authorised!';
+              }
+              document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+              document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+              document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+              connectTwitch();
+            }).catch(() => connectTwitch());
           } else {
             document.getElementById('cfg-auth-status').textContent = 'Cancelled.';
           }
@@ -829,11 +850,29 @@ function startTwitchAuth() {
         cfg.oauthToken = token;
         saveCfg();
         popup.close();
-        document.getElementById('cfg-auth-status').textContent = 'Authorised!';
-        document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
-        document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
-        document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
-        connectTwitch();
+        // Auto-fill channel name from token
+        fetch('https://id.twitch.tv/oauth2/validate', {
+          headers: { 'Authorization': 'OAuth ' + token }
+        }).then(r => r.json()).then(data => {
+          if (data.login) {
+            cfg.channel = data.login;
+            saveCfg();
+            document.getElementById('cfg-channel').value = data.login;
+            document.getElementById('cfg-auth-status').textContent = 'Connected as ' + data.login;
+          } else {
+            document.getElementById('cfg-auth-status').textContent = 'Authorised!';
+          }
+          document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+          document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+          document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+          connectTwitch();
+        }).catch(() => {
+          document.getElementById('cfg-auth-status').textContent = 'Authorised!';
+          document.getElementById('cfg-auth-btn').textContent = 'Re-connect Twitch';
+          document.getElementById('cfg-auth-btn').style.background = '#1e9e75';
+          document.getElementById('cfg-disconnect-btn').style.display = 'inline-block';
+          connectTwitch();
+        });
       }
     } catch(e) {
       // Cross-origin error while Twitch is loading — normal, keep polling
@@ -1073,7 +1112,6 @@ function cfgSave() {
   if (masterGain) masterGain.gain.value = cfg.volume;
   saveCfg();
   drawWheel();
-  if (cfg.channel) connectTwitch();
   const s = document.getElementById('cfg-status');
   s.style.display = 'block';
   setTimeout(() => { s.style.display = 'none'; cfgClose(); }, 1200);
