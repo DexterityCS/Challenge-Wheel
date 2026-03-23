@@ -797,7 +797,7 @@ function startTwitchAuth() {
   saveCfg();
   const scopes = 'channel:read:redemptions channel:manage:redemptions user:read:email';
   // Use this page itself as the redirect — it will detect the token on load and close
-  const redirectUri = window.location.href.split('?')[0].split('#')[0].replace(/\/?$/, '/');
+  const redirectUri = 'https://dexteritycs.github.io/Challenge-Wheel/';
   const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}&force_verify=true`;
   const popup = window.open(url, 'twitch-auth', 'width=500,height=750,left=200,top=100');
   document.getElementById('cfg-auth-status').textContent = 'Waiting for Twitch login...';
