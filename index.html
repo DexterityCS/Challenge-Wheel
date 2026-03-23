@@ -1052,6 +1052,9 @@ if (new URLSearchParams(window.location.search).get('config') === '1') {
 
 // Keyboard shortcut: press S to spin manually (useful when testing)
 document.addEventListener('keydown', e => {
+  const configOpen = document.getElementById('config-panel').classList.contains('open');
+  const typing = ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName);
+  if (configOpen || typing) return;
   if (e.key === 's' || e.key === 'S') manualSpin();
   if (e.key === 'Escape') closeResult();
   if (e.key === 'c' || e.key === 'C') openConfig();
