@@ -956,6 +956,32 @@ async function subscribeEventSub() {
   }
 }
 
+async function validateToken(token, statusEl) {
+  try {
+    const res = await fetch('https://id.twitch.tv/oauth2/validate', {
+      headers: { 'Authorization': 'OAuth ' + token }
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = 'Token invalid — reconnect Twitch.';
+      statusEl.style.color = '#e84b4b';
+      return;
+    }
+    const scopes = data.scopes || [];
+    const hasScope = scopes.includes('channel:read:redemptions');
+    if (hasScope) {
+      statusEl.textContent = 'Token OK · scopes: ' + scopes.join(', ');
+      statusEl.style.color = '#5dca5d';
+    } else {
+      statusEl.textContent = 'Missing scope! Disconnect and reconnect Twitch.';
+      statusEl.style.color = '#e84b4b';
+    }
+    console.log('[Wheel] Token scopes:', scopes);
+  } catch(e) {
+    statusEl.textContent = 'Could not validate token.';
+  }
+}
+
 function disconnectTwitch() {
   if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); ws = null; }
   cfg.oauthToken = '';
@@ -981,8 +1007,16 @@ function openConfig() {
   document.getElementById('cfg-reward').value = cfg.rewardFilter || '';
   const authBtn = document.getElementById('cfg-auth-btn');
   const authSt = document.getElementById('cfg-auth-status');
-  if (cfg.oauthToken) { authBtn.textContent = 'Re-connect Twitch'; authBtn.style.background = '#1e9e75'; authSt.textContent = 'Token saved.'; }
-  else { authBtn.textContent = 'Connect with Twitch'; authBtn.style.background = '#9146ff'; authSt.textContent = ''; }
+  const discBtn = document.getElementById('cfg-disconnect-btn');
+  if (cfg.oauthToken) {
+    authBtn.textContent = 'Re-connect Twitch'; authBtn.style.background = '#1e9e75';
+    authSt.textContent = 'Checking token...';
+    discBtn.style.display = 'inline-block';
+    validateToken(cfg.oauthToken, authSt);
+  } else {
+    authBtn.textContent = 'Connect with Twitch'; authBtn.style.background = '#9146ff';
+    authSt.textContent = ''; discBtn.style.display = 'none';
+  }
   document.getElementById('cfg-sound').value = cfg.soundEnabled ? 'on' : 'off';
   const vol = Math.round((cfg.volume ?? 0.7) * 100);
   document.getElementById('cfg-volume').value = vol;
@@ -1043,8 +1077,16 @@ function cfgReset() {
   document.getElementById('cfg-reward').value = cfg.rewardFilter || '';
   const authBtn = document.getElementById('cfg-auth-btn');
   const authSt = document.getElementById('cfg-auth-status');
-  if (cfg.oauthToken) { authBtn.textContent = 'Re-connect Twitch'; authBtn.style.background = '#1e9e75'; authSt.textContent = 'Token saved.'; }
-  else { authBtn.textContent = 'Connect with Twitch'; authBtn.style.background = '#9146ff'; authSt.textContent = ''; }
+  const discBtn = document.getElementById('cfg-disconnect-btn');
+  if (cfg.oauthToken) {
+    authBtn.textContent = 'Re-connect Twitch'; authBtn.style.background = '#1e9e75';
+    authSt.textContent = 'Checking token...';
+    discBtn.style.display = 'inline-block';
+    validateToken(cfg.oauthToken, authSt);
+  } else {
+    authBtn.textContent = 'Connect with Twitch'; authBtn.style.background = '#9146ff';
+    authSt.textContent = ''; discBtn.style.display = 'none';
+  }
   document.getElementById('cfg-sound').value = cfg.soundEnabled ? 'on' : 'off';
   const vol2 = Math.round((cfg.volume ?? 0.7) * 100);
   document.getElementById('cfg-volume').value = vol2;
