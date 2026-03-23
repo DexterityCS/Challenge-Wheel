@@ -25,7 +25,7 @@
 
 html, body {
   width: 100%; height: 100%;
-  background: transparent;
+  background: transparent !important;
   overflow: hidden;
   font-family: 'Barlow Condensed', sans-serif;
 }
@@ -35,6 +35,7 @@ html, body {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 16px;
   position: relative;
+  background: transparent;
 }
 
 /* Corner HUD brackets */
@@ -58,25 +59,21 @@ html, body {
 /* ---- Wheel ---- */
 #wheel-container {
   position: relative;
-  width: 0;
-  height: 0;
-  overflow: hidden;
+  width: var(--wheel-size);
+  height: var(--wheel-size);
   flex-shrink: 0;
+  display: none;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.6s ease;
 }
 #wheel-container.visible {
-  width: var(--wheel-size);
-  height: var(--wheel-size);
-  overflow: visible;
+  display: block;
   opacity: 1;
   pointer-events: all;
 }
 #wheel-container.hidden {
-  width: 0;
-  height: 0;
-  overflow: hidden;
+  display: none;
   opacity: 0;
   pointer-events: none;
 }
@@ -147,6 +144,7 @@ html, body {
 
 /* ---- Status bar — HUD style ---- */
 #status-bar {
+  display: none;
   position: absolute;
   top: 16px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
