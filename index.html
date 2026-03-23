@@ -792,11 +792,12 @@ function startTwitchAuth() {
   if (!clientId) { alert('Enter your Client ID first.'); return; }
   // Save clientId now so the redirect page can read it
   cfg.clientId = clientId;
+  cfg.oauthToken = '';
   saveCfg();
-  const scopes = 'channel:read:redemptions user:read:email';
+  const scopes = 'channel:read:redemptions channel:manage:redemptions user:read:email';
   // Use this page itself as the redirect — it will detect the token on load and close
   const redirectUri = window.location.href.split('?')[0].split('#')[0];
-  const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}`;
+  const url = `https://id.twitch.tv/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scopes)}&force_verify=true`;
   const popup = window.open(url, 'twitch-auth', 'width=500,height=750,left=200,top=100');
   document.getElementById('cfg-auth-status').textContent = 'Waiting for Twitch login...';
   // Poll for the popup to come back to our page with the token in the hash
