@@ -42,25 +42,29 @@ html, body {
 
 /* ---- Wheel ---- */
 #wheel-container {
-  position: relative;
+  position: absolute;
+  top: calc(50vh - 250px);
+  right: 20px;
   width: var(--wheel-size);
   height: var(--wheel-size);
-  flex-shrink: 0;
-  visibility: hidden;
+  display: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.6s ease, visibility 0.6s ease;
+  transition: opacity 0.6s ease;
+  cursor: grab;
+  user-select: none;
 }
 #wheel-container.visible {
-  visibility: visible;
+  display: block;
   opacity: 1;
   pointer-events: all;
 }
 #wheel-container.hidden {
-  visibility: hidden;
+  display: none;
   opacity: 0;
   pointer-events: none;
 }
+#wheel-container.dragging { cursor: grabbing; }
 
 #wheel-canvas {
   border-radius: 50%;
@@ -171,19 +175,23 @@ html, body {
 
 /* ---- Result overlay — bomb detonation card ---- */
 #result-overlay {
-  display: flex;
-  align-items: center; justify-content: center;
+  display: none;
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 500px;
   pointer-events: none;
-  visibility: hidden;
   opacity: 0;
-  transition: opacity 0.3s, visibility 0.3s;
-  width: 100%;
+  transition: opacity 0.3s;
+  cursor: grab;
+  user-select: none;
 }
 #result-overlay.show {
-  visibility: visible;
+  display: block;
   opacity: 1;
   pointer-events: all;
 }
+#result-overlay.dragging { cursor: grabbing; }
 
 #result-card {
   background: var(--bg-panel);
@@ -191,14 +199,13 @@ html, body {
   border-radius: 2px;
   padding: 0;
   text-align: center;
-  min-width: 360px; max-width: 500px;
   width: 100%;
   position: relative;
-  transform: scale(0.92) translateY(-8px);
+  transform: scale(0.92);
   transition: transform 0.3s cubic-bezier(0.34,1.46,0.64,1);
   overflow: hidden;
 }
-#result-overlay.show #result-card { transform: scale(1) translateY(0); }
+#result-overlay.show #result-card { transform: scale(1); }
 
 /* Top bar on result card */
 #result-card::before {
@@ -398,6 +405,13 @@ html, body {
     </div>
   </div>
 
+  <div class="cfg-section">
+    <h2>SLOBS / OBS browser source URL</h2>
+    <p style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">After connecting Twitch above, click the button below to copy a URL with all settings baked in. Paste it directly into your browser source — no further setup needed.</p>
+    <button id="cfg-copy-url" onclick="copySlobsUrl()" style="padding:10px 24px;font-size:12px;font-weight:900;font-family:'Orbitron',monospace;background:var(--accent2);color:#fff;border:none;border-radius:2px;cursor:pointer;letter-spacing:2px;text-transform:uppercase;">Copy Browser Source URL</button>
+    <div id="cfg-url-out" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-top:8px;word-break:break-all;"></div>
+  </div>
+
   <div>
     <button id="cfg-save" onclick="cfgSave()">Save &amp; apply</button>
     <button id="cfg-cancel" onclick="cfgClose()">Cancel</button>
@@ -442,6 +456,19 @@ let eventsubSessionId = null;
 let twitchUserId = null;
 
 function loadCfg() {
+  // URL params take priority — allows full config via URL for SLOBS plug-and-play
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = {};
+  if (params.get('clientId'))     fromUrl.clientId     = params.get('clientId');
+  if (params.get('token'))        fromUrl.oauthToken   = params.get('token');
+  if (params.get('channel'))      fromUrl.channel      = params.get('channel');
+  if (params.get('reward'))       fromUrl.rewardFilter = params.get('reward');
+  if (params.get('volume'))       fromUrl.volume       = parseFloat(params.get('volume'));
+  if (Object.keys(fromUrl).length > 0) {
+    // URL config present — merge over defaults, skip localStorage
+    console.log('[Wheel] Loaded config from URL params');
+    return Object.assign({}, DEFAULTS, fromUrl);
+  }
   try {
     const s = localStorage.getItem('wheelCfg');
     if (s) return Object.assign({}, DEFAULTS, JSON.parse(s));
@@ -1139,6 +1166,26 @@ function cfgReset() {
   setTimeout(() => { s.style.display = 'none'; s.textContent = 'Saved!'; }, 1500);
 }
 
+function copySlobsUrl() {
+  const base = window.location.origin + window.location.pathname.replace(/\/?$/, '/');
+  const params = new URLSearchParams();
+  if (cfg.clientId)     params.set('clientId', cfg.clientId);
+  if (cfg.oauthToken)   params.set('token', cfg.oauthToken);
+  if (cfg.channel)      params.set('channel', cfg.channel);
+  if (cfg.rewardFilter) params.set('reward', cfg.rewardFilter);
+  if (cfg.volume !== 0.7) params.set('volume', cfg.volume);
+  const url = base + '?' + params.toString();
+  const out = document.getElementById('cfg-url-out');
+  if (out) out.textContent = url;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('cfg-copy-url');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Browser Source URL'; }, 2000);
+  }).catch(() => {
+    prompt('Copy this URL into your browser source:', url);
+  });
+}
+
 function esc(s) { return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // ---- Init ----
@@ -1190,6 +1237,35 @@ if (cfg.channel) connectTwitch();
 if (new URLSearchParams(window.location.search).get('config') === '1') {
   openConfig();
 }
+
+// ---- Drag to move ----
+function makeDraggable(el) {
+  el.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    // Switch from right-based to left-based positioning for dragging
+    el.style.right = 'auto';
+    el.style.left = rect.left + 'px';
+    el.style.top = rect.top + 'px';
+    const startX = e.clientX, startY = e.clientY;
+    const origX = rect.left, origY = rect.top;
+    el.classList.add('dragging');
+    function onMove(e) {
+      el.style.left = (origX + e.clientX - startX) + 'px';
+      el.style.top  = (origY + e.clientY - startY) + 'px';
+    }
+    function onUp() {
+      el.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+makeDraggable(document.getElementById('wheel-container'));
+makeDraggable(document.getElementById('result-overlay'));
 
 // Keyboard shortcut: press S to spin manually (useful when testing)
 document.addEventListener('keydown', e => {
